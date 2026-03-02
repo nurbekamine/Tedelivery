@@ -1,0 +1,814 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+
+// ════════════════════════════════════════════
+//  🍕 PIZZA DASH — Cozy Delivery Adventure
+// ════════════════════════════════════════════
+
+const CW = 640, CH = 480;
+
+const P = {
+  grass: "#6AC44E", grassDk: "#58A83E", grassLine: "#7ED45E",
+  road: "#C8B89A", roadEdge: "#B0A080", roadDash: "#E8D8B0",
+  houseColors: ["#FF8A80","#80DEEA","#FFCC80","#CE93D8","#A5D6A7"],
+  roofColors:  ["#C62828","#00838F","#E65100","#6A1B9A","#2E7D32"],
+  shopWall: "#FF5722", shopRoof: "#BF360C",
+  skin: "#FDBCB4", hair: "#3E2723",
+  cap: "#E53935", capBrim: "#FF6F60",
+  shirt: "#FF8A65", pants: "#5C6BC0", shoe: "#4E342E",
+  bikeFrame: "#FDD835", bikeWheel: "#9E9E9E", bikeHub: "#E0E0E0",
+  boxOuter: "#8D6E63", boxLid: "#A1887F", pizzaRed: "#FF7043",
+  dogBody: "#8D6E63", dogHead: "#A1887F",
+  catBody: "#BDBDBD", catHead: "#E0E0E0",
+  puddle: "rgba(100,181,246,0.55)", puddleShine: "rgba(255,255,255,0.55)",
+  coin: "#FDD835",
+};
+
+const LEVELS = [
+  {
+    id:1, name:"Quiet Neighborhood", emoji:"🏡", timeLimit:90,
+    shop:{x:40,y:40},
+    houses:[
+      {id:0,x:490,y:60,c:0,name:"Oak St. 1"},
+      {id:1,x:80,y:330,c:1,name:"Maple Ave 2"},
+      {id:2,x:420,y:340,c:2,name:"Pine Rd 3"},
+    ],
+    roads:[
+      {x:0,y:195,w:CW,h:42},
+      {x:280,y:0,w:42,h:CH},
+    ],
+    dogs:[], cars:[],
+    puddles:[],
+    cats:[{x:200,y:210}],
+  },
+  {
+    id:2, name:"Small Town", emoji:"🏘️", timeLimit:80,
+    shop:{x:40,y:40},
+    houses:[
+      {id:0,x:490,y:55,c:0},{id:1,x:90,y:345,c:3},
+      {id:2,x:420,y:335,c:2},{id:3,x:540,y:255,c:4},
+    ],
+    roads:[
+      {x:0,y:178,w:CW,h:44},{x:0,y:385,w:CW,h:44},
+      {x:258,y:0,w:44,h:CH},
+    ],
+    dogs:[
+      {x:140,y:195,dir:1,speed:0.9},
+      {x:420,y:400,dir:-1,speed:1.1},
+    ],
+    cars:[],
+    puddles:[{x:360,y:193,rw:38,rh:18},{x:180,y:390,rw:34,rh:16}],
+    cats:[{x:300,y:255},{x:510,y:198}],
+  },
+  {
+    id:3, name:"Busy Street", emoji:"🌆", timeLimit:70,
+    shop:{x:40,y:40},
+    houses:[
+      {id:0,x:490,y:50,c:0},{id:1,x:90,y:340,c:1},
+      {id:2,x:420,y:325,c:3},{id:3,x:545,y:170,c:2},{id:4,x:160,y:432,c:4},
+    ],
+    roads:[
+      {x:0,y:148,w:CW,h:44},{x:0,y:282,w:CW,h:44},{x:0,y:416,w:CW,h:44},
+      {x:228,y:0,w:44,h:CH},{x:398,y:0,w:44,h:CH},
+    ],
+    dogs:[{x:300,y:163,dir:1,speed:1.0}],
+    cars:[
+      {x:0,y:163,dir:1,speed:1.6,col:"#EF5350"},
+      {x:CW,y:297,dir:-1,speed:1.9,col:"#42A5F5"},
+      {x:0,y:431,dir:1,speed:1.3,col:"#66BB6A"},
+    ],
+    puddles:[{x:155,y:155,rw:36,rh:18},{x:450,y:286,rw:40,rh:20}],
+    cats:[{x:255,y:200}],
+  },
+];
+
+// ─── Draw Helpers ──────────────────────────────────────────────
+function rr(ctx,x,y,w,h,r,fill,stroke,lw=2){
+  ctx.beginPath();
+  if(ctx.roundRect) ctx.roundRect(x,y,w,h,r);
+  else { ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h-r);ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath(); }
+  if(fill){ctx.fillStyle=fill;ctx.fill();}
+  if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=lw;ctx.stroke();}
+}
+
+function drawBackground(ctx,roads){
+  ctx.fillStyle=P.grass; ctx.fillRect(0,0,CW,CH);
+  ctx.fillStyle=P.grassDk;
+  for(let gx=0;gx<CW;gx+=56) for(let gy=0;gy<CH;gy+=56){
+    ctx.fillRect(gx+10,gy+10,10,10); ctx.fillRect(gx+30,gy+30,8,8);
+  }
+  ctx.fillStyle=P.grassLine;
+  for(let gx=0;gx<CW;gx+=28) for(let gy=0;gy<CH;gy+=20){
+    ctx.fillRect(gx,gy,2,8);
+  }
+  roads.forEach(r=>{
+    ctx.fillStyle=P.road; ctx.fillRect(r.x,r.y,r.w,r.h);
+    ctx.fillStyle=P.roadEdge;
+    if(r.w>r.h){
+      ctx.fillRect(r.x,r.y,r.w,3); ctx.fillRect(r.x,r.y+r.h-3,r.w,3);
+      ctx.fillStyle=P.roadDash;
+      for(let dx=r.x;dx<r.x+r.w;dx+=24) ctx.fillRect(dx,r.y+r.h/2-2,13,4);
+    } else {
+      ctx.fillRect(r.x,r.y,3,r.h); ctx.fillRect(r.x+r.w-3,r.y,3,r.h);
+      ctx.fillStyle=P.roadDash;
+      for(let dy=r.y;dy<r.y+r.h;dy+=24) ctx.fillRect(r.x+r.w/2-2,dy,4,13);
+    }
+  });
+}
+
+function drawShop(ctx,sx,sy){
+  // Shadow
+  ctx.fillStyle="rgba(0,0,0,0.12)"; rr(ctx,sx+5,sy+5,80,62,4,"rgba(0,0,0,0.12)");
+  // Body
+  ctx.fillStyle=P.shopWall; ctx.fillRect(sx,sy,80,62);
+  // Roof
+  ctx.fillStyle=P.shopRoof;
+  ctx.beginPath(); ctx.moveTo(sx-6,sy); ctx.lineTo(sx+40,sy-22); ctx.lineTo(sx+86,sy); ctx.closePath(); ctx.fill();
+  // Chimney
+  ctx.fillStyle="#7D3C00"; ctx.fillRect(sx+58,sy-32,10,18);
+  ctx.fillStyle="#A0522D"; ctx.fillRect(sx+56,sy-36,14,6);
+  // Window
+  ctx.fillStyle="#B3E5FC"; ctx.fillRect(sx+8,sy+10,22,18);
+  ctx.fillStyle="rgba(255,255,255,0.5)"; ctx.fillRect(sx+8,sy+18,22,2); ctx.fillRect(sx+18,sy+10,2,18);
+  // Door
+  ctx.fillStyle="#5D4037"; rr(ctx,sx+46,sy+32,18,30,3,"#5D4037");
+  ctx.fillStyle="#FFD700"; ctx.beginPath(); ctx.arc(sx+62,sy+48,2,0,Math.PI*2); ctx.fill();
+  // Sign
+  rr(ctx,sx+4,sy-12,56,14,4,"#FDD835");
+  ctx.font="bold 7px 'Press Start 2P',monospace"; ctx.fillStyle="#BF360C"; ctx.textAlign="center";
+  ctx.fillText("🍕 PIZZA",sx+32,sy-1);
+}
+
+function drawHouse(ctx,house,isTarget,delivered,hasBell,t){
+  const{x,y,c}=house;
+  const hc=P.houseColors[c%P.houseColors.length];
+  const rc=P.roofColors[c%P.roofColors.length];
+  ctx.fillStyle="rgba(0,0,0,0.1)"; ctx.fillRect(x+5,y+5,60,50);
+  ctx.fillStyle=hc; ctx.fillRect(x,y,60,50);
+  // Roof
+  ctx.fillStyle=rc;
+  ctx.beginPath(); ctx.moveTo(x-5,y); ctx.lineTo(x+30,y-20); ctx.lineTo(x+65,y); ctx.closePath(); ctx.fill();
+  // Windows
+  ctx.fillStyle="#B3E5FC"; ctx.fillRect(x+5,y+8,18,16); ctx.fillRect(x+37,y+8,18,16);
+  ctx.fillStyle="rgba(255,255,255,0.5)";
+  ctx.fillRect(x+5,y+15,18,2); ctx.fillRect(x+13,y+8,2,16);
+  ctx.fillRect(x+37,y+15,18,2); ctx.fillRect(x+45,y+8,2,16);
+  // Door
+  ctx.fillStyle="#5D4037"; rr(ctx,x+22,y+28,16,22,2,"#5D4037");
+  ctx.fillStyle="#FFD700"; ctx.beginPath(); ctx.arc(x+36,y+40,2,0,Math.PI*2); ctx.fill();
+  // Flowerpot
+  ctx.fillStyle="#FF8A65"; ctx.fillRect(x+2,y+45,10,5);
+  ctx.fillStyle="#E91E63"; ctx.beginPath(); ctx.arc(x+7,y+43,4,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle="#4CAF50"; ctx.fillRect(x+6,y+38,2,6);
+
+  if(isTarget){
+    const p=0.5+0.5*Math.sin(t/220);
+    const bounce=Math.sin(t/320)*5;
+    ctx.globalAlpha=p;
+    ctx.strokeStyle="#FDD835"; ctx.lineWidth=3;
+    ctx.strokeRect(x-3,y-3,66,56);
+    ctx.globalAlpha=1;
+    ctx.font="18px serif"; ctx.textAlign="center";
+    ctx.fillText("🍕",x+30,y-36+bounce);
+    ctx.font="bold 9px 'Press Start 2P',monospace";
+    ctx.fillStyle="#000"; ctx.fillText("DELIVER!",x+30,y-18+bounce);
+    ctx.fillStyle="#FDD835"; ctx.fillText("DELIVER!",x+30,y-19+bounce);
+  }
+  // Customer emoji
+  ctx.font="16px serif"; ctx.textAlign="center";
+  if(delivered)       ctx.fillText("🎉",x+53,y+44);
+  else if(isTarget)   ctx.fillText("😍",x+53,y+44);
+  else                ctx.fillText("😊",x+53,y+44);
+
+  if(hasBell){
+    const bounce2=Math.sin(t/140)*4;
+    ctx.font="bold 10px 'Press Start 2P',monospace";
+    ctx.fillStyle="#000"; ctx.fillText("THANK YOU! 🔔",x+30,y-54+bounce2);
+    ctx.fillStyle="#FDD835"; ctx.fillText("THANK YOU! 🔔",x+30,y-55+bounce2);
+  }
+}
+
+function drawPlayer(ctx,px,py,dir,hasPizza,frame,t){
+  const x=Math.round(px), y=Math.round(py);
+  // Shadow
+  ctx.fillStyle="rgba(0,0,0,0.15)"; ctx.beginPath(); ctx.ellipse(x,y+14,12,5,0,0,Math.PI*2); ctx.fill();
+  // Bike wheels
+  ctx.fillStyle=P.bikeWheel;
+  ctx.beginPath(); ctx.arc(x-9,y+13,7,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x+9,y+13,7,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=P.bikeHub;
+  ctx.beginPath(); ctx.arc(x-9,y+13,3,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x+9,y+13,3,0,Math.PI*2); ctx.fill();
+  // Spokes
+  ctx.strokeStyle=P.bikeWheel; ctx.lineWidth=1;
+  [-1,1].forEach(sx2=>{
+    const wx=x+sx2*9;
+    ctx.beginPath(); ctx.moveTo(wx,y+6); ctx.lineTo(wx,y+20); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(wx-7,y+13); ctx.lineTo(wx+7,y+13); ctx.stroke();
+  });
+  // Bike frame
+  ctx.strokeStyle=P.bikeFrame; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(x-9,y+13); ctx.lineTo(x,y+2); ctx.lineTo(x+9,y+13); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x,y+2); ctx.lineTo(x-2,y-5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x-6,y-5); ctx.lineTo(x+6,y-5); ctx.stroke();
+  // Pedals (animated)
+  const pedAngle=t/250;
+  ctx.fillStyle="#FFF"; ctx.beginPath(); ctx.arc(x+Math.cos(pedAngle)*5,y+6+Math.sin(pedAngle)*4,3,0,Math.PI*2); ctx.fill();
+  // Pants (legs)
+  const legSwing=Math.sin(frame*Math.PI)*4;
+  ctx.fillStyle=P.pants;
+  ctx.fillRect(x-6,y-4,5,9+legSwing);
+  ctx.fillRect(x+1,y-4,5,9-legSwing);
+  ctx.fillStyle=P.shoe;
+  ctx.fillRect(x-7,y+4+legSwing,7,4);
+  ctx.fillRect(x+1,y+4-legSwing,7,4);
+  // Body
+  ctx.fillStyle=P.shirt; rr(ctx,x-8,y-18,16,14,3,P.shirt);
+  // Head
+  ctx.fillStyle=P.skin; ctx.beginPath(); ctx.arc(x,y-24,10,0,Math.PI*2); ctx.fill();
+  // Hair
+  ctx.fillStyle=P.hair; ctx.fillRect(x-10,y-34,20,10);
+  ctx.beginPath(); ctx.arc(x,y-34,10,Math.PI,0); ctx.fill();
+  // Cap
+  ctx.fillStyle=P.cap; ctx.fillRect(x-11,y-34,22,7);
+  ctx.fillStyle=P.capBrim; ctx.fillRect(x-14,y-28,28,4);
+  ctx.fillStyle="#FFFF00"; ctx.fillRect(x-5,y-33,10,4);
+  // Eyes
+  ctx.fillStyle="#3E2723";
+  if(dir==="left")       { ctx.fillRect(x-8,y-25,3,3); }
+  else if(dir==="right") { ctx.fillRect(x+5,y-25,3,3); }
+  else                   { ctx.fillRect(x-6,y-25,3,3); ctx.fillRect(x+3,y-25,3,3); }
+  // Smile
+  ctx.strokeStyle="#C46060"; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.arc(x+(dir==="left"?-3:3),y-19,4,0,Math.PI); ctx.stroke();
+  // Rosy cheeks
+  ctx.fillStyle="rgba(255,150,150,0.4)";
+  ctx.beginPath(); ctx.ellipse(x-7,y-20,3,2,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(x+7,y-20,3,2,0,0,Math.PI*2); ctx.fill();
+  // Pizza box (if carrying)
+  if(hasPizza){
+    const boxBounce=Math.sin(t/190)*2;
+    ctx.fillStyle=P.boxOuter; ctx.fillRect(x+8,y-28+boxBounce,18,14);
+    ctx.fillStyle=P.boxLid;   ctx.fillRect(x+8,y-28+boxBounce,18,5);
+    ctx.fillStyle=P.pizzaRed; ctx.fillRect(x+10,y-23+boxBounce,14,8);
+    ctx.fillStyle="#FDD835"; // cheese dots
+    ctx.beginPath(); ctx.arc(x+13,y-20+boxBounce,2,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x+18,y-20+boxBounce,2,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x+20,y-22+boxBounce,1.5,0,Math.PI*2); ctx.fill();
+  }
+}
+
+function drawDog(ctx,dog,t){
+  const{x,y,dir}=dog;
+  ctx.save(); ctx.translate(x,y); ctx.scale(dir,1);
+  const legSwing=Math.sin(t/130)*3;
+  // Shadow
+  ctx.fillStyle="rgba(0,0,0,0.1)"; ctx.beginPath(); ctx.ellipse(0,12,14,4,0,0,Math.PI*2); ctx.fill();
+  // Legs
+  ctx.fillStyle=P.dogBody;
+  ctx.fillRect(-8,4,4,7+legSwing); ctx.fillRect(-2,4,4,7-legSwing);
+  ctx.fillRect(3,4,4,7-legSwing);  ctx.fillRect(8,4,4,7+legSwing);
+  // Body
+  rr(ctx,-12,-8,24,14,5,P.dogBody);
+  // Head
+  ctx.fillStyle=P.dogHead; ctx.beginPath(); ctx.arc(16,-5,9,0,Math.PI*2); ctx.fill();
+  // Ear
+  ctx.fillStyle="#6D4C41"; ctx.beginPath(); ctx.arc(20,-12,5,0,Math.PI*2); ctx.fill();
+  // Eye
+  ctx.fillStyle="#212121"; ctx.beginPath(); ctx.arc(19,-6,2,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle="#FFF"; ctx.beginPath(); ctx.arc(20,-7,1,0,Math.PI*2); ctx.fill();
+  // Nose
+  ctx.fillStyle="#212121"; ctx.beginPath(); ctx.arc(24,-4,2,0,Math.PI*2); ctx.fill();
+  // Tail
+  ctx.strokeStyle=P.dogBody; ctx.lineWidth=3;
+  const tailWag=Math.sin(t/150)*8;
+  ctx.beginPath(); ctx.moveTo(-11,-2); ctx.quadraticCurveTo(-22,-14+tailWag,-18,-22+tailWag); ctx.stroke();
+  // Collar
+  ctx.fillStyle="#FF5722"; ctx.fillRect(-8,-10,16,3);
+  ctx.fillStyle="#FFD700"; ctx.beginPath(); ctx.arc(0,-9,2,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawCat(ctx,cat,t){
+  const{x,y}=cat;
+  const zOff=Math.sin(t/700)*2;
+  ctx.save(); ctx.translate(x,y);
+  ctx.fillStyle="rgba(0,0,0,0.08)"; ctx.beginPath(); ctx.ellipse(0,8,18,6,0,0,Math.PI*2); ctx.fill();
+  // Body (curled)
+  ctx.fillStyle=P.catBody; ctx.beginPath(); ctx.ellipse(0,0,16,9,0,0,Math.PI*2); ctx.fill();
+  // Head
+  ctx.fillStyle=P.catHead; ctx.beginPath(); ctx.arc(12,-4,8,0,Math.PI*2); ctx.fill();
+  // Ears
+  ctx.fillStyle=P.catBody;
+  ctx.beginPath(); ctx.moveTo(8,-10); ctx.lineTo(12,-18); ctx.lineTo(16,-10); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(16,-10); ctx.lineTo(20,-17); ctx.lineTo(22,-9); ctx.fill();
+  ctx.fillStyle="#FFC0CB";
+  ctx.beginPath(); ctx.moveTo(9,-10); ctx.lineTo(12,-15); ctx.lineTo(15,-10); ctx.fill();
+  // Closed eyes
+  ctx.strokeStyle="#757575"; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(8,-5); ctx.lineTo(12,-5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(14,-5); ctx.lineTo(18,-5); ctx.stroke();
+  // Whiskers
+  ctx.strokeStyle="rgba(150,150,150,0.7)"; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(19,-4); ctx.lineTo(28,-3); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(19,-4); ctx.lineTo(28,-5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(19,-4); ctx.lineTo(28,-7); ctx.stroke();
+  // Tail curl
+  ctx.strokeStyle=P.catBody; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.moveTo(-14,0); ctx.quadraticCurveTo(-22,-12,-12,-16); ctx.stroke();
+  // ZZZ
+  ctx.fillStyle="rgba(120,120,150,0.8)"; ctx.font="9px monospace"; ctx.textAlign="center";
+  ctx.fillText("z z z",14,-24+zOff);
+  ctx.restore();
+}
+
+function drawCar(ctx,car,t){
+  const{x,y,dir,col}=car;
+  ctx.save(); ctx.translate(x,y); ctx.scale(dir,1);
+  ctx.fillStyle="rgba(0,0,0,0.1)"; ctx.beginPath(); ctx.ellipse(0,16,22,6,0,0,Math.PI*2); ctx.fill();
+  // Body
+  rr(ctx,-22,-10,44,22,5,col);
+  // Top
+  rr(ctx,-14,-24,30,16,4,col);
+  // Windows
+  ctx.fillStyle="#B3E5FC";
+  ctx.fillRect(-12,-22,12,10); ctx.fillRect(2,-22,10,10);
+  ctx.fillStyle="rgba(255,255,255,0.3)";
+  ctx.fillRect(-12,-22,3,10); ctx.fillRect(2,-22,2,10);
+  // Wheels
+  ctx.fillStyle="#212121";
+  ctx.beginPath(); ctx.arc(-13,12,7,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(13,12,7,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle="#757575";
+  ctx.beginPath(); ctx.arc(-13,12,3.5,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(13,12,3.5,0,Math.PI*2); ctx.fill();
+  // Headlight
+  ctx.fillStyle="#FFF9C4"; ctx.fillRect(18,-6,6,8);
+  ctx.fillStyle="rgba(255,249,196,0.4)"; ctx.fillRect(24,-10,10,16);
+  // Exhaust puff (animated)
+  const puffSize=2+Math.sin(t/300)*1;
+  ctx.fillStyle="rgba(200,200,200,0.4)"; ctx.beginPath(); ctx.arc(-28,8,puffSize,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawPuddle(ctx,pu){
+  const{x,y,rw,rh}=pu;
+  ctx.fillStyle=P.puddle; ctx.beginPath(); ctx.ellipse(x,y,rw,rh,0,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle="rgba(30,136,229,0.35)"; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.ellipse(x,y,rw-3,rh-3,0,0,Math.PI*2); ctx.stroke();
+  ctx.fillStyle=P.puddleShine; ctx.beginPath(); ctx.ellipse(x-rw/3,y-rh/3,rw/5,rh/4,-0.5,0,Math.PI*2); ctx.fill();
+}
+
+function drawHUD(ctx,s,level,t){
+  // Top bar
+  ctx.fillStyle="rgba(0,0,0,0.52)"; ctx.fillRect(0,0,CW,38);
+  // Timer bar
+  const timerPct=s.timer/level.timeLimit;
+  ctx.fillStyle=timerPct>0.5?"#66BB6A":timerPct>0.25?"#FFB300":"#EF5350";
+  ctx.fillRect(0,35,CW*timerPct,3);
+  // Text
+  ctx.font="11px 'Press Start 2P',monospace";
+  const tc=s.timer>20?"#FFF":"#FF5252";
+  ctx.fillStyle=tc; ctx.textAlign="left"; ctx.fillText(`⏱ ${s.timer}s`,10,25);
+  ctx.fillStyle="#FDD835"; ctx.fillText(`🪙 $${s.coins}`,150,25);
+  ctx.fillStyle="#FFF"; ctx.fillText(`🍕 ${s.deliveredCount}/${level.houses.length}`,310,25);
+  ctx.fillStyle="#FFB74D"; ctx.textAlign="right"; ctx.fillText(`${level.emoji} Lv${level.id}`,CW-10,25);
+  // Bottom hint
+  ctx.fillStyle="rgba(255,255,200,0.85)"; ctx.font="6px 'Press Start 2P',monospace"; ctx.textAlign="center";
+  if(!s.hasPizza)
+    ctx.fillText("Go to 🏠 PIZZA SHOP ➡ press SPACE to pick up!",CW/2,CH-6);
+  else
+    ctx.fillText("Find the 🍕 marked house ➡ get close ➡ press SPACE!",CW/2,CH-6);
+}
+
+function drawMiniMap(ctx,level,s){
+  const mx=CW-88,my=CH-68,mw=80,mh=60;
+  const sx=mw/CW,sy=mh/CH;
+  ctx.fillStyle="rgba(0,0,0,0.65)"; rr(ctx,mx-2,my-2,mw+4,mh+4,4,"rgba(0,0,0,0.65)");
+  ctx.fillStyle="#5AAB3A"; ctx.fillRect(mx,my,mw,mh);
+  level.roads.forEach(r=>{
+    ctx.fillStyle=P.road; ctx.fillRect(mx+r.x*sx,my+r.y*sy,Math.max(r.w*sx,2),Math.max(r.h*sy,2));
+  });
+  level.houses.forEach((h,i)=>{
+    ctx.fillStyle=s.currentDelivery===i?"#FDD835":P.houseColors[h.c%5];
+    ctx.fillRect(mx+h.x*sx,my+h.y*sy,5,4);
+  });
+  ctx.fillStyle="#FF5722"; ctx.fillRect(mx+level.shop.x*sx,my+level.shop.y*sy,5,4);
+  ctx.fillStyle="#FFF"; ctx.fillRect(mx+s.px*sx-2,my+s.py*sy-2,4,4);
+}
+
+// ════════════════════════════════════════════
+//  MAIN COMPONENT
+// ════════════════════════════════════════════
+export default function PizzaDash(){
+  const canvasRef=useRef(null);
+  const [gameMode,setGameMode]=useState("menu");
+  const [curLvl,setCurLvl]=useState(0);
+  const [coins,setCoins]=useState(0);
+
+  const gs=useRef({
+    px:100,py:230,dir:"right",frame:0,frameTimer:0,
+    coins:0,totalCoins:0,stars:0,
+    timer:90,timerMs:0,
+    hasPizza:false,currentDelivery:-1,
+    deliveryQueue:[],deliveredHouses:[],deliveredCount:0,
+    popups:[],bellEffects:[],
+    dogs:[],cars:[],
+    spaceHeld:false,
+    bikeLevel:0,hasMap:false,
+  });
+
+  const keys=useRef({});
+  const raf=useRef(null);
+  const lastT=useRef(0);
+  const gameModeRef=useRef("menu");
+
+  useEffect(()=>{ gameModeRef.current=gameMode; },[gameMode]);
+
+  useEffect(()=>{
+    const dn=e=>{
+      keys.current[e.code]=true;
+      if(e.code==="Space") e.preventDefault();
+    };
+    const up=e=>{ keys.current[e.code]=false; };
+    window.addEventListener("keydown",dn);
+    window.addEventListener("keyup",up);
+    return()=>{ window.removeEventListener("keydown",dn); window.removeEventListener("keyup",up); };
+  },[]);
+
+  const loadLevel=useCallback((idx)=>{
+    const lv=LEVELS[idx];
+    const s=gs.current;
+    s.timer=lv.timeLimit; s.timerMs=0;
+    s.hasPizza=false; s.currentDelivery=-1;
+    s.deliveryQueue=lv.houses.map((_,i)=>i);
+    s.deliveredHouses=[]; s.deliveredCount=0;
+    s.popups=[]; s.bellEffects=[];
+    s.px=100; s.py=230; s.dir="right";
+    s.spaceHeld=false;
+    s.dogs=lv.dogs.map(d=>({...d}));
+    s.cars=lv.cars.map(c=>({...c}));
+    setCurLvl(idx);
+    setCoins(s.coins);
+    setGameMode("playing");
+  },[]);
+
+  useEffect(()=>{
+    if(gameMode!=="playing"){ if(raf.current) cancelAnimationFrame(raf.current); return; }
+    const canvas=canvasRef.current; if(!canvas) return;
+    const ctx=canvas.getContext("2d");
+    ctx.imageSmoothingEnabled=false;
+    const lv=LEVELS[curLvl];
+
+    function addPopup(x,y,text,color,dur=2000){
+      gs.current.popups.push({x,y,text,color,age:0,dur});
+    }
+    function addPopupOnce(x,y,text,color){
+      if(!gs.current.popups.find(p=>p.text===text&&p.age<800))
+        addPopup(x,y,text,color,1400);
+    }
+
+    function update(dt){
+      const s=gs.current; const k=keys.current;
+      const SPEEDS=[2.5,3.3,4.1,5.0];
+      let spd=SPEEDS[Math.min(s.bikeLevel,3)];
+      let dx=0,dy=0,moved=false;
+      if(k.ArrowLeft||k.KeyA){dx=-spd;s.dir="left";moved=true;}
+      if(k.ArrowRight||k.KeyD){dx=spd;s.dir="right";moved=true;}
+      if(k.ArrowUp||k.KeyW){dy=-spd;s.dir="up";moved=true;}
+      if(k.ArrowDown||k.KeyS){dy=spd;s.dir="down";moved=true;}
+      if(dx&&dy){dx*=0.707;dy*=0.707;}
+
+      // Puddle slowdown
+      let inPuddle=false;
+      lv.puddles.forEach(pu=>{
+        const ex=Math.abs(s.px-pu.x)/pu.rw, ey=Math.abs(s.py-pu.y)/pu.rh;
+        if(ex*ex+ey*ey<1.2) inPuddle=true;
+      });
+      if(inPuddle){dx*=0.38;dy*=0.38;if(moved)addPopupOnce(s.px,s.py-25,"💦 Splashy!","#80DEEA");}
+
+      s.px=Math.max(16,Math.min(CW-16,s.px+dx));
+      s.py=Math.max(16,Math.min(CH-30,s.py+dy));
+      if(moved){s.frameTimer+=dt; if(s.frameTimer>160){s.frame=(s.frame+1)%4;s.frameTimer=0;}}
+
+      // Timer
+      s.timerMs+=dt;
+      if(s.timerMs>=1000){s.timerMs-=1000;s.timer=Math.max(0,s.timer-1);}
+      if(s.timer===0&&gameModeRef.current==="playing"){setGameMode("lose");}
+
+      // Space action
+      if(k.Space&&!s.spaceHeld){
+        s.spaceHeld=true;
+        const shop=lv.shop;
+        const shopDist=Math.hypot(s.px-(shop.x+40),s.py-(shop.y+40));
+        if(!s.hasPizza&&shopDist<60&&s.deliveryQueue.length>0){
+          s.hasPizza=true; s.currentDelivery=s.deliveryQueue[0];
+          addPopup(shop.x+40,shop.y-5,"🍕 Got it!","#FF7043");
+        } else if(s.hasPizza&&s.currentDelivery>=0){
+          const h=lv.houses[s.currentDelivery];
+          const hd=Math.hypot(s.px-(h.x+30),s.py-(h.y+40));
+          if(hd<58){
+            const idx=s.currentDelivery;
+            s.hasPizza=false;
+            s.deliveryQueue=s.deliveryQueue.filter(i=>i!==idx);
+            s.deliveredHouses.push(idx); s.deliveredCount++;
+            s.bellEffects.push({idx,age:0});
+            const tip=5+Math.floor(s.timer/8);
+            s.coins+=tip; s.totalCoins+=tip;
+            s.stars+=s.timer>50?3:s.timer>25?2:1;
+            addPopup(h.x+30,h.y-18,`+$${tip} 🪙`,"#66BB6A");
+            addPopup(h.x+30,h.y-38,"THANK YOU! 😄","#FDD835",2500);
+            s.currentDelivery=-1;
+            if(s.deliveryQueue.length===0) setTimeout(()=>setGameMode("win"),1400);
+          }
+        }
+      }
+      if(!k.Space) s.spaceHeld=false;
+
+      // Dogs
+      s.dogs.forEach(dog=>{
+        dog.x+=dog.dir*dog.speed;
+        if(dog.x>CW-15||dog.x<15) dog.dir*=-1;
+        const dd=Math.hypot(s.px-dog.x,s.py-dog.y);
+        if(dd<26){
+          const a=Math.atan2(s.py-dog.y,s.px-dog.x);
+          s.px+=Math.cos(a)*2.5; s.py+=Math.sin(a)*2.5;
+          addPopupOnce(s.px,s.py-26,"🐕 Woof!","#A1887F");
+        }
+      });
+
+      // Cars
+      s.cars.forEach(car=>{
+        car.x+=car.dir*car.speed;
+        if(car.dir>0&&car.x>CW+35) car.x=-35;
+        if(car.dir<0&&car.x<-35) car.x=CW+35;
+        const cx=Math.abs(s.px-car.x),cy=Math.abs(s.py-car.y);
+        if(cx<30&&cy<20){
+          const a=Math.atan2(s.py-car.y,s.px-car.x);
+          s.px+=Math.cos(a)*5; s.py+=Math.sin(a)*5;
+          s.px=Math.max(16,Math.min(CW-16,s.px));
+          s.py=Math.max(16,Math.min(CH-30,s.py));
+          addPopupOnce(s.px,s.py-28,"🚗 Beep!","#EF5350");
+          if(s.hasPizza&&Math.random()<0.25){
+            s.hasPizza=false;
+            if(s.currentDelivery>=0&&!s.deliveryQueue.includes(s.currentDelivery))
+              s.deliveryQueue.unshift(s.currentDelivery);
+            s.currentDelivery=-1;
+            addPopup(s.px,s.py-46,"Dropped pizza! 😱","#F44336");
+          }
+        }
+      });
+
+      // Popups
+      s.popups.forEach(p=>p.age+=dt);
+      s.popups=s.popups.filter(p=>p.age<p.dur);
+      s.bellEffects.forEach(b=>b.age+=dt);
+      s.bellEffects=s.bellEffects.filter(b=>b.age<3000);
+    }
+
+    function draw(t){
+      const s=gs.current;
+      ctx.clearRect(0,0,CW,CH);
+      drawBackground(ctx,lv.roads);
+      lv.puddles.forEach(pu=>drawPuddle(ctx,pu));
+      lv.cats.forEach(cat=>drawCat(ctx,cat,t));
+
+      // Shop
+      drawShop(ctx,lv.shop.x,lv.shop.y);
+      if(!s.hasPizza&&s.deliveryQueue.length>0){
+        const pulse=0.5+0.5*Math.sin(t/260);
+        ctx.globalAlpha=pulse;
+        ctx.font="9px 'Press Start 2P',monospace";
+        ctx.fillStyle="#FDD835"; ctx.textAlign="center";
+        ctx.fillText("SPACE",lv.shop.x+40,lv.shop.y+75);
+        ctx.globalAlpha=1;
+      }
+
+      lv.houses.forEach((h,i)=>{
+        const bell=s.bellEffects.find(b=>b.idx===i&&b.age<2200);
+        drawHouse(ctx,h,s.currentDelivery===i,s.deliveredHouses.includes(i),!!bell,t);
+      });
+
+      s.dogs.forEach(d=>drawDog(ctx,d,t));
+      s.cars.forEach(c=>drawCar(ctx,c,t));
+      drawPlayer(ctx,s.px,s.py,s.dir,s.hasPizza,s.frame,t);
+      if(s.hasMap) drawMiniMap(ctx,lv,s);
+
+      // Popups
+      s.popups.forEach(p=>{
+        const alpha=Math.max(0,1-p.age/p.dur);
+        const rise=(p.age/p.dur)*32;
+        ctx.globalAlpha=alpha;
+        ctx.font="bold 10px 'Press Start 2P',monospace";
+        ctx.textAlign="center";
+        ctx.fillStyle="#000"; ctx.fillText(p.text,p.x+1,p.y-rise+1);
+        ctx.fillStyle=p.color; ctx.fillText(p.text,p.x,p.y-rise);
+        ctx.globalAlpha=1;
+      });
+
+      drawHUD(ctx,s,lv,t);
+      setCoins(s.coins);
+    }
+
+    function loop(time){
+      const dt=Math.min(time-lastT.current,50);
+      lastT.current=time;
+      update(dt); draw(time);
+      raf.current=requestAnimationFrame(loop);
+    }
+    lastT.current=performance.now();
+    raf.current=requestAnimationFrame(loop);
+    return()=>{ if(raf.current) cancelAnimationFrame(raf.current); };
+  },[gameMode,curLvl]);
+
+  function buyUpgrade(id){
+    const s=gs.current;
+    const costs={bike:15,map:12};
+    if((s.coins||0)<(costs[id]||99)) return;
+    s.coins-=costs[id];
+    if(id==="bike") s.bikeLevel=Math.min(s.bikeLevel+1,3);
+    if(id==="map") s.hasMap=true;
+    setCoins(s.coins);
+  }
+
+  const s=gs.current;
+
+  const screenStyle={
+    display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+    minHeight:"100vh",
+    background:"linear-gradient(160deg,#FFF9C4 0%,#FFE0B2 40%,#FFCCBC 100%)",
+    fontFamily:"'Press Start 2P',monospace",
+  };
+
+  const cardStyle=(bg,border)=>({
+    background:bg,borderRadius:20,padding:"36px 44px",textAlign:"center",
+    boxShadow:`0 14px 48px rgba(0,0,0,0.2)`,
+    border:`4px solid ${border}`,maxWidth:520,width:"90%",
+  });
+
+  const btnStyle=(bg,color)=>({
+    cursor:"pointer",border:"none",borderRadius:10,
+    fontFamily:"'Press Start 2P',monospace",
+    background:bg,color:color,padding:"14px 26px",fontSize:10,
+    boxShadow:"0 4px 12px rgba(0,0,0,0.2)",
+    transition:"transform 0.1s",
+  });
+
+  return(
+    <div style={screenStyle}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0;}
+        .gbtn:hover{transform:scale(1.06)!important;}
+        .gbtn:active{transform:scale(0.96)!important;}
+        canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;}
+      `}</style>
+
+      {/* GAME CANVAS */}
+      <div style={{display:gameMode==="playing"?"block":"none",position:"relative"}}>
+        <canvas ref={canvasRef} width={CW} height={CH}
+          style={{borderRadius:14,boxShadow:"0 10px 40px rgba(0,0,0,0.3)",display:"block"}}/>
+      </div>
+
+      {/* ── MENU ── */}
+      {gameMode==="menu"&&(
+        <div style={cardStyle("linear-gradient(140deg,#FF6F00,#FF5722)","#BF360C")}>
+          <div style={{fontSize:60,marginBottom:8}}>🍕</div>
+          <h1 style={{color:"#FFF",fontSize:22,lineHeight:1.5,marginBottom:10}}>PIZZA DASH</h1>
+          <p style={{color:"#FFE0B2",fontSize:8,lineHeight:2.4,marginBottom:24}}>
+            🌟 A cozy little delivery adventure!
+          </p>
+          <div style={{background:"rgba(0,0,0,0.22)",borderRadius:14,padding:18,marginBottom:28}}>
+            <p style={{color:"#FFE0B2",fontSize:7,lineHeight:2.6}}>
+              🎮 WASD / ARROWS → Move<br/>
+              SPACE → Pick up &amp; Deliver<br/>
+              🍕 Deliver all pizzas to win!
+            </p>
+          </div>
+          <button className="gbtn" style={btnStyle("#FDD835","#5D4037")}
+            onClick={()=>loadLevel(0)}>
+            🚲 START DELIVERING!
+          </button>
+          <p style={{color:"rgba(255,255,255,0.5)",fontSize:6,marginTop:20}}>
+            3 cozy levels • Cute vibes only 🌈
+          </p>
+        </div>
+      )}
+
+      {/* ── WIN ── */}
+      {gameMode==="win"&&(
+        <div style={cardStyle("linear-gradient(140deg,#43A047,#1B5E20)","#1B5E20")}>
+          <div style={{fontSize:52}}>🎉</div>
+          <h2 style={{color:"#FFF",fontSize:16,margin:"10px 0 6px",lineHeight:1.5}}>
+            LEVEL COMPLETE!
+          </h2>
+          <p style={{color:"#C8E6C9",fontSize:8,marginBottom:20}}>All pizzas delivered! 🌟</p>
+          <div style={{background:"rgba(0,0,0,0.18)",borderRadius:12,padding:18,marginBottom:24}}>
+            <p style={{color:"#FFF",fontSize:10,lineHeight:2.6}}>
+              🪙 Coins: ${s.coins}<br/>
+              ⏱ Time left: {s.timer}s<br/>
+              ⭐ Stars: {"⭐".repeat(Math.min(s.stars, 15))}
+            </p>
+          </div>
+          <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap"}}>
+            {curLvl<LEVELS.length-1?(
+              <>
+                <button className="gbtn" style={btnStyle("#CE93D8","#4A148C")}
+                  onClick={()=>setGameMode("upgrade")}>🔧 Shop</button>
+                <button className="gbtn" style={btnStyle("#FDD835","#5D4037")}
+                  onClick={()=>loadLevel(curLvl+1)}>Next ➡</button>
+              </>
+            ):(
+              <button className="gbtn" style={btnStyle("#FDD835","#5D4037")}
+                onClick={()=>setGameMode("complete")}>🏆 Final Score!</button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── LOSE ── */}
+      {gameMode==="lose"&&(
+        <div style={cardStyle("linear-gradient(140deg,#F44336,#B71C1C)","#7F0000")}>
+          <div style={{fontSize:52}}>😅</div>
+          <h2 style={{color:"#FFF",fontSize:16,margin:"10px 0 6px",lineHeight:1.5}}>
+            Time's Up!
+          </h2>
+          <p style={{color:"#FFCDD2",fontSize:8,marginBottom:24}}>
+            No worries — try again! 🍕
+          </p>
+          <div style={{display:"flex",gap:12,justifyContent:"center"}}>
+            <button className="gbtn" style={btnStyle("#FDD835","#5D4037")}
+              onClick={()=>loadLevel(curLvl)}>🔄 Retry!</button>
+            <button className="gbtn" style={btnStyle("rgba(255,255,255,0.18)","#FFF")}
+              onClick={()=>setGameMode("menu")}>🏠 Menu</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── UPGRADE SHOP ── */}
+      {gameMode==="upgrade"&&(
+        <div style={cardStyle("linear-gradient(140deg,#7B1FA2,#4A148C)","#38006b")}>
+          <div style={{fontSize:40}}>🔧</div>
+          <h2 style={{color:"#FFF",fontSize:14,margin:"10px 0 4px"}}>Upgrade Shop</h2>
+          <p style={{color:"#CE93D8",fontSize:8,marginBottom:20}}>🪙 Budget: ${coins}</p>
+          <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:24}}>
+            {[
+              {id:"bike",label:"🚲 Faster Bike",cost:15,desc:"Zoom zoom!",maxed:s.bikeLevel>=3},
+              {id:"map", label:"🧭 Mini-map",   cost:12,desc:"See the whole town!",maxed:s.hasMap},
+            ].map(u=>(
+              <div key={u.id} style={{
+                background:"rgba(255,255,255,0.1)",borderRadius:12,padding:"12px 16px",
+                display:"flex",alignItems:"center",justifyContent:"space-between",
+                border:!u.maxed&&coins>=u.cost?"2px solid #CE93D8":"2px solid transparent",
+              }}>
+                <div style={{textAlign:"left"}}>
+                  <p style={{color:"#FFF",fontSize:9,marginBottom:4}}>{u.label}</p>
+                  <p style={{color:"#CE93D8",fontSize:7}}>{u.desc}</p>
+                </div>
+                <button className="gbtn" onClick={()=>buyUpgrade(u.id)}
+                  disabled={u.maxed||coins<u.cost}
+                  style={{
+                    ...btnStyle(
+                      u.maxed?"#4CAF50":coins>=u.cost?"#FDD835":"rgba(255,255,255,0.1)",
+                      u.maxed?"#FFF":coins>=u.cost?"#5D4037":"rgba(255,255,255,0.35)"
+                    ),
+                    cursor:u.maxed||coins<u.cost?"not-allowed":"pointer",
+                    padding:"10px 14px",fontSize:8,
+                  }}>
+                  {u.maxed?"✓ MAX":`$${u.cost}`}
+                </button>
+              </div>
+            ))}
+          </div>
+          <button className="gbtn" style={btnStyle("#FDD835","#5D4037")}
+            onClick={()=>loadLevel(curLvl+1)}>Next Level ➡</button>
+        </div>
+      )}
+
+      {/* ── COMPLETE ── */}
+      {gameMode==="complete"&&(
+        <div style={cardStyle("linear-gradient(140deg,#FF8F00,#E65100)","#BF360C")}>
+          <div style={{fontSize:64}}>🏆</div>
+          <h1 style={{color:"#FFF",fontSize:14,margin:"12px 0 8px",lineHeight:1.8}}>
+            YOU'RE THE TOWN'S<br/>PIZZA CHAMPION!
+          </h1>
+          <p style={{color:"#FFE0B2",fontSize:8,marginBottom:20}}>
+            Everyone loves you! 🍕💕
+          </p>
+          <div style={{background:"rgba(0,0,0,0.2)",borderRadius:12,padding:20,marginBottom:28}}>
+            <p style={{color:"#FFF",fontSize:11,lineHeight:2.6}}>
+              🪙 Total Earned: ${s.totalCoins+s.coins}<br/>
+              ⭐ Stars: {Math.min(s.stars,45)}<br/>
+              🍕 A+ Delivery Champion!
+            </p>
+          </div>
+          <button className="gbtn" style={btnStyle("#FDD835","#5D4037")}
+            onClick={()=>{
+              const s=gs.current;
+              s.coins=0;s.totalCoins=0;s.stars=0;s.bikeLevel=0;s.hasMap=false;
+              setCoins(0); setGameMode("menu");
+            }}>🔄 Play Again!</button>
+        </div>
+      )}
+    </div>
+  );
+}
